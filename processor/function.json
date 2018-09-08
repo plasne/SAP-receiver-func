@@ -1,0 +1,22 @@
+{
+    "disabled": false,
+    "bindings": [
+        {
+            "name": "req",
+            "direction": "in",
+            "type": "httpTrigger",
+            "authLevel": "anonymous"
+        },
+        {
+            "name": "res",
+            "direction": "out",
+            "type": "http"
+        },
+        {
+            "name": "priority",
+            "direction": "in",
+            "type": "queueTrigger",
+            "queueName": "priority"
+        }
+    ]
+}
