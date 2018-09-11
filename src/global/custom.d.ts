@@ -13,3 +13,8 @@ declare module "azure-storage" {
         }
     }
 }
+
+type message = {
+    partition: string,
+    filenames: string[]
+};

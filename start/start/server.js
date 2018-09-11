@@ -19,6 +19,7 @@ const azure_functions_ts_essentials_1 = require("azure-functions-ts-essentials")
 const azs = __importStar(require("azure-storage"));
 const es6_promise_pool_1 = __importDefault(require("es6-promise-pool"));
 const util = __importStar(require("util"));
+const BlobHelper_1 = __importDefault(require("../global/BlobHelper"));
 function valueOrDefault(value, _default) {
     if (value) {
         const i = parseInt(value);
@@ -37,111 +38,6 @@ const STORAGE_CONTAINER_SCHEMAS = process.env.STORAGE_CONTAINER_SCHEMAS;
 const STORAGE_SAS = process.env.STORAGE_SAS;
 const STORAGE_KEY = process.env.STORAGE_KEY;
 const FILES_PER_MESSAGE = valueOrDefault(process.env.FILES_PER_MESSAGE, 10);
-// get a segment of block blobs
-async function listSegmentWithPrefix(context, service, container, prefix, all, token = null) {
-    // promify
-    const listBlobsSegmentedWithPrefix = util.promisify(azs.BlobService.prototype.listBlobsSegmentedWithPrefix).bind(service);
-    // recursively keep getting segments
-    do {
-        if (context.log)
-            context.log.verbose(`listing blobs "${container}/${prefix}"...`);
-        const result = await listBlobsSegmentedWithPrefix(container, prefix, token);
-        for (const entry of result.entries) {
-            if (entry.blobType === "BlockBlob")
-                all.push(entry);
-        }
-        if (context.log)
-            context.log.verbose(`${all.length} block blobs enumerated thusfar...`);
-        if (!result.continuationToken)
-            break;
-        token = result.continuationToken;
-    } while (true);
-}
-// list all block blobs in container
-async function listWithPrefix(context, service, container, prefix, pattern) {
-    // get all blobs
-    const all = [];
-    await listSegmentWithPrefix(context, service, container, prefix, all);
-    if (context.log)
-        context.log.verbose(`${all.length} block blobs found.`);
-    // filter if a pattern should be applied
-    if (pattern) {
-        return all.filter(entry => {
-            pattern.lastIndex = 0; // reset
-            return pattern.test(entry.name);
-        });
-    }
-    else {
-        return all;
-    }
-}
-// get a segment of block blobs
-async function listSegment(context, service, container, all, token = null) {
-    // promify
-    const listBlobsSegmented = util.promisify(azs.BlobService.prototype.listBlobsSegmented).bind(service);
-    // recursively keep getting segments
-    do {
-        if (context.log)
-            context.log.verbose(`listing blobs "${container}"...`);
-        const result = await listBlobsSegmented(container, token);
-        for (const entry of result.entries) {
-            if (entry.blobType === "BlockBlob")
-                all.push(entry);
-        }
-        if (context.log)
-            context.log.verbose(`${all.length} block blobs enumerated thusfar...`);
-        if (!result.continuationToken)
-            break;
-        token = result.continuationToken;
-    } while (true);
-}
-// list all block blobs in container
-async function list(context, service, container, pattern) {
-    // get all blobs
-    const all = [];
-    await listSegment(context, service, container, all);
-    if (context.log)
-        context.log.verbose(`${all.length} block blobs found.`);
-    // filter if a pattern should be applied
-    if (pattern) {
-        return all.filter(entry => {
-            pattern.lastIndex = 0; // reset
-            return pattern.test(entry.name);
-        });
-    }
-    else {
-        return all;
-    }
-}
-// load all schemas
-async function getSchemas(context, service, container) {
-    const schemas = [];
-    // promisify
-    const getBlobToText = util.promisify(azs.BlobService.prototype.getBlobToText).bind(service);
-    // get a list of all schema files
-    const blobs = await list(context, service, container, /.+\.json$/g);
-    if (context.log)
-        context.log.verbose(`${blobs.length} schemas found.`);
-    // produce promises to load the files
-    let index = 0;
-    const producer = () => {
-        if (index < blobs.length) {
-            const blob = blobs[index];
-            index++;
-            return getBlobToText(container, blob.name).then(raw => {
-                const obj = JSON.parse(raw);
-                schemas.push(obj);
-            });
-        }
-        else {
-            return undefined;
-        }
-    };
-    // load them 10 at a time
-    const pool = new es6_promise_pool_1.default(producer, 10);
-    await pool.start();
-    return schemas;
-}
 // module
 async function run(context) {
     try {
@@ -175,18 +71,18 @@ async function run(context) {
         })();
         if (!blobService)
             throw new Error("A connection could not be made to the Blob service.");
-        // promisify
-        const createContainerIfNotExists = util.promisify(azs.BlobService.prototype.createContainerIfNotExists).bind(blobService);
-        const createOrReplaceAppendBlob = util.promisify(azs.BlobService.prototype.createOrReplaceAppendBlob).bind(blobService);
-        const appendBlockFromText = util.promisify(azs.BlobService.prototype.appendBlockFromText).bind(blobService);
         // read schemas (with some parallelism)
         if (context.log)
             context.log.verbose(`getting schemas from "${STORAGE_CONTAINER_SCHEMAS}"...`);
-        const schemas = await getSchemas(context, blobService, STORAGE_CONTAINER_SCHEMAS);
+        const schemaBlobHelper = new BlobHelper_1.default(context, blobService, STORAGE_CONTAINER_SCHEMAS);
+        const schemaBlobs = await schemaBlobHelper.list(/.+\.json$/g);
+        const schemaFilenames = schemaBlobs.map(s => s.name);
+        const schemas = await schemaBlobHelper.loadFiles(schemaFilenames);
         // create the output container if it doesn't already exist
+        const outputBlobHelper = new BlobHelper_1.default(context, blobService, STORAGE_CONTAINER_OUTPUT);
         if (context.log)
             context.log.verbose(`creating output container "${STORAGE_CONTAINER_OUTPUT}" (if necessary)...`);
-        await createContainerIfNotExists(STORAGE_CONTAINER_OUTPUT);
+        outputBlobHelper.createContainerIfNotExists();
         if (context.log)
             context.log.verbose(`created output container "${STORAGE_CONTAINER_OUTPUT}".`);
         // create file for each schema with header
@@ -198,8 +94,8 @@ async function run(context) {
             const filename = `${partition}/${schema.filename}`;
             if (context.log)
                 context.log.verbose(`schema "${schema.name}" is creating or replacing file "${STORAGE_CONTAINER_OUTPUT}/${filename}"...`);
-            await createOrReplaceAppendBlob(STORAGE_CONTAINER_OUTPUT, filename);
-            await appendBlockFromText(STORAGE_CONTAINER_OUTPUT, filename, headers.join(",") + "\n");
+            await outputBlobHelper.createOrReplaceAppendBlob(filename);
+            await outputBlobHelper.appendToBlob(filename, headers.join(",") + "\n");
             if (context.log)
                 context.log.verbose(`schema "${schema.name}" successfully wrote "${STORAGE_CONTAINER_OUTPUT}/${filename}".`);
         }
@@ -212,12 +108,13 @@ async function run(context) {
         if (context.log)
             context.log.verbose(`started enqueuing filenames to "processing"...`);
         let count = 0;
+        const helper = new BlobHelper_1.default(context, blobService, STORAGE_CONTAINER_INPUT);
         if (context.log)
             context.log.verbose(`creating queue "processing" (if necessary)...`);
         await createQueueIfNotExists("processing");
         if (context.log)
             context.log.verbose(`created queue "processing".`);
-        const blobs = await listWithPrefix(context, blobService, STORAGE_CONTAINER_INPUT, partition + "/", /.+\.xml$/g);
+        const blobs = await helper.listWithPrefix(partition + "/", /.+\.xml$/g);
         const pool = new es6_promise_pool_1.default(() => {
             if (blobs.length < 1)
                 return undefined;

@@ -9,8 +9,8 @@
     "queues": {
         "maxPollingInterval": 1000,
         "visibilityTimeout": "00:00:30",
-        "batchSize": 16,
-        "maxDequeueCount": 5,
-        "newBatchThreshold": 8
+        "batchSize": 1,
+        "maxDequeueCount": 4,
+        "newBatchThreshold": 1
     }
 }
