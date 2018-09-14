@@ -1,15 +1,31 @@
 
 // includes
-import { Context } from "azure-functions-ts-essentials";
 import * as azs from "azure-storage";
 import * as util from "util";
 import PromisePool from "es6-promise-pool";
+import { EventEmitter } from "events";
+
+export type formats = "json" | "text";
+
+export interface BlobHelperJSON {
+    service?:          azs.BlobService
+    connectionString?: string,
+    account?:          string,
+    sas?:              string,
+    key?:              string,
+    container:         string
+}
+
+export interface BlobHelperBatchWrite {
+    filename: string,
+    content:  string
+}
 
 export default class BlobHelper {
 
-    private context:   Context;
-    private service:   azs.BlobService;
-    private container: string;
+    public events:    EventEmitter = new EventEmitter();
+    public service:   azs.BlobService;
+    public container: string;
 
     // create or replace an append blob
     public createOrReplaceAppendBlob(filename: string) {
@@ -25,15 +41,48 @@ export default class BlobHelper {
         return appendBlockFromText(this.container, filename, content);
     }
 
+    // append content with concurrency
+    public async appendToBlobs(writes: BlobHelperBatchWrite[], concurrency = 10) {
+
+        // produce promises to save them
+        let index = 0;
+        const producer = () => {
+            if (index < writes.length) {
+                const write = writes[index];
+                index++;
+                this.events.emit("verbose", `${write.content.length} bytes writing to "${write.filename}"...`);
+                return this.appendToBlob(write.filename, write.content).then(_ => {
+                    this.events.emit("verbose", `${write.content.length} bytes written to "${write.filename}".`);
+                });
+            } else {
+                return undefined;
+            }
+        }
+    
+        // enqueue them x at a time
+        const pool = new PromisePool(producer, concurrency);
+        await pool.start();
+
+        // log
+        this.events.emit("verbose", `${index} writes(s) committed.`);
+
+    }
+
     // load a file
-    public loadFile(filename: string) {
+    public async loadFile(filename: string, format: formats = "text") {
         const getBlobToText: (container: string, blob: string) => Promise<string> =
             util.promisify(azs.BlobService.prototype.getBlobToText).bind(this.service);
-        return getBlobToText(this.container, filename);
+        const raw = await getBlobToText(this.container, filename);
+        switch (format) {
+            case "json":
+                return JSON.parse(raw);
+            case "text":
+                return raw;
+        }
     }
 
     // load a set of files
-    public async loadFiles(filenames: string[], concurrency: number = 10) {
+    public async loadFiles(filenames: string[], format: formats = "text", concurrency: number = 10) {
         const set: any[] = [];
 
         // produce promises to load the files
@@ -42,16 +91,15 @@ export default class BlobHelper {
             if (index < filenames.length) {
                 const filename = filenames[index];
                 index++;
-                return this.loadFile(filename).then(raw => {
-                    const obj = JSON.parse(raw);
-                    set.push(obj);
+                return this.loadFile(filename, format).then(o => {
+                    set.push(o);
                 });
             } else {
                 return undefined;
             }
         }
     
-        // load them 10 at a time
+        // load them x at a time
         const pool = new PromisePool(producer, concurrency);
         await pool.start();
 
@@ -67,12 +115,12 @@ export default class BlobHelper {
 
         // recursively keep getting segments
         do {
-            if (this.context.log) this.context.log.verbose(`listing blobs "${this.container}/${prefix}"...`);
+            this.events.emit("verbose", `listing blobs "${this.container}/${prefix}"...`);
             const result = await listBlobsSegmentedWithPrefix(this.container, prefix, token);
             for (const entry of result.entries) {
                 if (entry.blobType === "BlockBlob") all.push(entry);
             }
-            if (this.context.log) this.context.log.verbose(`${all.length} block blobs enumerated thusfar...`);
+            this.events.emit("verbose", `${all.length} block blobs enumerated thusfar...`);
             if (!result.continuationToken) break;
             token = result.continuationToken;
         } while (true);
@@ -85,7 +133,7 @@ export default class BlobHelper {
         // get all blobs
         const all: azs.BlobService.BlobResult[] = [];
         await this.listSegmentWithPrefix(prefix, all);
-        if (this.context.log) this.context.log.verbose(`${all.length} block blobs found.`);
+        this.events.emit("verbose", `${all.length} block blobs found.`);
 
         // filter if a pattern should be applied
         if (pattern) {
@@ -108,12 +156,12 @@ export default class BlobHelper {
 
         // recursively keep getting segments
         do {
-            if (this.context.log) this.context.log.verbose(`listing blobs "${this.container}"...`);
+            this.events.emit("verbose", `listing blobs "${this.container}"...`);
             const result = await listBlobsSegmented(this.container, token);
             for (const entry of result.entries) {
                 if (entry.blobType === "BlockBlob") all.push(entry);
             }
-            if (this.context.log) this.context.log.verbose(`${all.length} block blobs enumerated thusfar...`);
+            this.events.emit("verbose", `${all.length} block blobs enumerated thusfar...`);
             if (!result.continuationToken) break;
             token = result.continuationToken;
         } while (true);
@@ -126,7 +174,7 @@ export default class BlobHelper {
         // get all blobs
         const all: azs.BlobService.BlobResult[] = [];
         await this.listSegment(all);
-        if (this.context.log) this.context.log.verbose(`${all.length} block blobs found.`);
+        this.events.emit("verbose", `${all.length} block blobs found.`);
 
         // filter if a pattern should be applied
         if (pattern) {
@@ -147,10 +195,25 @@ export default class BlobHelper {
         return createContainerIfNotExists(this.container);
     }
 
-    constructor(context: Context, service: azs.BlobService, container: string) {
-        this.context = context;
-        this.service = service;
-        this.container = container;
+    constructor(obj: BlobHelperJSON) {
+
+        // establish the service
+        if (obj.service) {
+            this.service = obj.service;
+        } else if (obj.connectionString) {
+            this.service = azs.createBlobService(obj.connectionString);
+        } else if (obj.account && obj.sas) {
+            const host = `https://${obj.account}.blob.core.windows.net`;
+            this.service = azs.createBlobServiceWithSas(host, obj.sas);
+        } else if (obj.account && obj.key) {
+            this.service = azs.createBlobService(obj.account, obj.key);
+        } else {
+            throw new Error(`You must specify service, connectionString, account/sas, or account/key.`)
+        }
+
+        // record the container name
+        this.container = obj.container;
+
     }
 
 }

@@ -17,9 +17,12 @@
         "moment-round": "^1.0.1",
         "query-string": "^6.1.0",
         "request": "^2.88.0",
-        "uuid": "^3.3.2"
+        "uuid": "^3.3.2",
+        "xmldom": "^0.1.27"
     },
     "devDependencies": {
-        "@types/node": "^10.9.4"
+        "@types/node": "^10.9.4",
+        "@types/xmldom": "^0.1.29",
+        "xpath": "0.0.27"
     }
 }

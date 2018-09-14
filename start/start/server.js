@@ -3,23 +3,14 @@
 //  "azure-fucntions-ts-essentials" required "npm install -D types/node"
 //  "es6-promise-pool" required "dom" being included in the library
 //  host.json must use "Trace" to see "verbose" logs
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
-    result["default"] = mod;
-    return result;
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 // includes
 const azure_functions_ts_essentials_1 = require("azure-functions-ts-essentials");
-const azs = __importStar(require("azure-storage"));
-const es6_promise_pool_1 = __importDefault(require("es6-promise-pool"));
-const util = __importStar(require("util"));
 const BlobHelper_1 = __importDefault(require("../global/BlobHelper"));
+const QueueHelper_1 = __importDefault(require("../global/QueueHelper"));
 function valueOrDefault(value, _default) {
     if (value) {
         const i = parseInt(value);
@@ -27,6 +18,16 @@ function valueOrDefault(value, _default) {
     }
     else {
         return _default;
+    }
+}
+function bridgeLogs(helper, context) {
+    if (context.log) {
+        helper.events.on("info", msg => { if (context.log)
+            context.log.info(msg); });
+        helper.events.on("verbose", msg => { if (context.log)
+            context.log.verbose(msg); });
+        helper.events.on("error", msg => { if (context.log)
+            context.log.error(msg); });
     }
 }
 // variables
@@ -61,77 +62,84 @@ async function run(context) {
         if (context.log)
             context.log.verbose("validated succesfully");
         const partition = context.req.query.partition;
-        // use the appropriate method to connect to the Blob service
-        const blobService = (() => {
-            if (STORAGE_SAS)
-                return azs.createBlobServiceWithSas(`https://${STORAGE_ACCOUNT}.blob.core.windows.net`, STORAGE_SAS);
-            if (STORAGE_KEY)
-                return azs.createBlobService(STORAGE_ACCOUNT, STORAGE_KEY);
-            return undefined;
-        })();
-        if (!blobService)
-            throw new Error("A connection could not be made to the Blob service.");
+        // establish connections
+        const input = new BlobHelper_1.default({
+            account: STORAGE_ACCOUNT,
+            sas: STORAGE_SAS,
+            key: STORAGE_KEY,
+            container: STORAGE_CONTAINER_INPUT
+        });
+        bridgeLogs(input, context);
+        const output = new BlobHelper_1.default({
+            service: input.service,
+            container: STORAGE_CONTAINER_OUTPUT
+        });
+        bridgeLogs(output, context);
+        const schema = new BlobHelper_1.default({
+            service: input.service,
+            container: STORAGE_CONTAINER_SCHEMAS
+        });
+        bridgeLogs(schema, context);
+        const queue = new QueueHelper_1.default({
+            connectionString: AZURE_WEB_JOBS_STORAGE,
+            name: "processing",
+            encoder: "base64"
+        });
+        bridgeLogs(queue, context);
         // read schemas (with some parallelism)
         if (context.log)
             context.log.verbose(`getting schemas from "${STORAGE_CONTAINER_SCHEMAS}"...`);
-        const schemaBlobHelper = new BlobHelper_1.default(context, blobService, STORAGE_CONTAINER_SCHEMAS);
-        const schemaBlobs = await schemaBlobHelper.list(/.+\.json$/g);
+        const schemaBlobs = await schema.list(/.+\.json$/g);
         const schemaFilenames = schemaBlobs.map(s => s.name);
-        const schemas = await schemaBlobHelper.loadFiles(schemaFilenames);
+        const schemas = await schema.loadFiles(schemaFilenames, "json");
         // create the output container if it doesn't already exist
-        const outputBlobHelper = new BlobHelper_1.default(context, blobService, STORAGE_CONTAINER_OUTPUT);
         if (context.log)
             context.log.verbose(`creating output container "${STORAGE_CONTAINER_OUTPUT}" (if necessary)...`);
-        outputBlobHelper.createContainerIfNotExists();
+        output.createContainerIfNotExists();
         if (context.log)
             context.log.verbose(`created output container "${STORAGE_CONTAINER_OUTPUT}".`);
         // create file for each schema with header
-        for (const schema of schemas) {
+        for (const s of schemas) {
             const headers = [];
-            for (const column of schema.columns) {
+            for (const column of s.columns) {
                 headers.push(column.header);
             }
-            const filename = `${partition}/${schema.filename}`;
+            const filename = `${partition}/${s.filename}`;
             if (context.log)
-                context.log.verbose(`schema "${schema.name}" is creating or replacing file "${STORAGE_CONTAINER_OUTPUT}/${filename}"...`);
-            await outputBlobHelper.createOrReplaceAppendBlob(filename);
-            await outputBlobHelper.appendToBlob(filename, headers.join(",") + "\n");
+                context.log.verbose(`schema "${s.name}" is creating or replacing file "${STORAGE_CONTAINER_OUTPUT}/${filename}"...`);
+            await output.createOrReplaceAppendBlob(filename);
+            await output.appendToBlob(filename, headers.join(",") + "\n");
             if (context.log)
-                context.log.verbose(`schema "${schema.name}" successfully wrote "${STORAGE_CONTAINER_OUTPUT}/${filename}".`);
+                context.log.verbose(`schema "${s.name}" successfully wrote "${STORAGE_CONTAINER_OUTPUT}/${filename}".`);
         }
-        // connect to the Queue service
-        const queueService = azs.createQueueService(AZURE_WEB_JOBS_STORAGE);
-        // promisify
-        const createQueueIfNotExists = util.promisify(azs.QueueService.prototype.createQueueIfNotExists).bind(queueService);
-        const createMessage = util.promisify(azs.QueueService.prototype.createMessage).bind(queueService);
-        // enqueue a list of files (10 write operations at a time)
-        if (context.log)
-            context.log.verbose(`started enqueuing filenames to "processing"...`);
-        let count = 0;
-        const helper = new BlobHelper_1.default(context, blobService, STORAGE_CONTAINER_INPUT);
+        // create the queue if necessary
         if (context.log)
             context.log.verbose(`creating queue "processing" (if necessary)...`);
-        await createQueueIfNotExists("processing");
+        await queue.createQueueIfNotExists();
         if (context.log)
             context.log.verbose(`created queue "processing".`);
-        const blobs = await helper.listWithPrefix(partition + "/", /.+\.xml$/g);
-        const pool = new es6_promise_pool_1.default(() => {
-            if (blobs.length < 1)
-                return undefined;
-            const group = blobs.splice(0, FILES_PER_MESSAGE);
+        // get a complete list of blobs
+        const blobs = await input.listWithPrefix(partition + "/", /.+\.xml$/g);
+        // craft messages packing them per FILES_PER_MESSAGE
+        let count = 0;
+        const messages = [];
+        for (let outer = 0; outer < blobs.length; outer += FILES_PER_MESSAGE) {
             const message = {
                 partition: partition,
                 filenames: []
             };
-            for (const blob of group) {
-                message.filenames.push(blob.name);
+            const max = Math.min(outer + FILES_PER_MESSAGE, blobs.length);
+            for (let inner = outer; inner < max; inner++) {
+                message.filenames.push(blobs[inner].name);
+                count++;
             }
-            count += group.length;
-            if (count % (FILES_PER_MESSAGE * 100) === 0 && context.log)
-                context.log.verbose(`enqueued ${count} filenames to "processing"...`);
-            return createMessage("processing", JSON.stringify(message));
-        }, 10);
-        await pool.start();
+            const encoded = JSON.stringify(message);
+            messages.push(encoded);
+        }
+        // enqueue a list of files (with some parallelism)
+        if (context.log)
+            context.log.verbose(`started enqueuing filenames to "processing"...`);
+        await queue.enqueueMessages(messages);
         if (context.log)
             context.log.verbose(`enqueued ${count} filenames to "processing".`);
         // respond with status

@@ -1,5 +1,6 @@
 {
     "disabled": false,
+    "scriptFile": "start/server.js",
     "bindings": [
         {
             "name": "req",

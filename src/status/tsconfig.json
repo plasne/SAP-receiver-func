@@ -1,13 +1,15 @@
 {
     "include": [
-        "*"
+        "*",
+        "../global/*"
     ],
     "compilerOptions": {
         "outDir": "../../status",
         "target": "esnext",
         "module": "commonjs",
         "lib": [
-            "es2018"
+            "es2018",
+            "dom"
         ],
         "allowJs": true,
         "checkJs": true,

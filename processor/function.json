@@ -1,11 +1,13 @@
 {
     "disabled": false,
+    "scriptFile": "processor/server.js",
     "bindings": [
         {
             "name": "queue",
             "direction": "in",
             "type": "queueTrigger",
-            "queueName": "processing"
+            "queueName": "processing",
+            "dataType": "string"
         }
     ]
 }
