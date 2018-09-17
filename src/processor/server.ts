@@ -29,12 +29,13 @@ export async function run(context: Context) {
     try {
 
         // validate
+        if (context.log) context.log.verbose("validating configuration...");
         if (!STORAGE_ACCOUNT) throw new Error("STORAGE_ACCOUNT is not defined.");
         if (!STORAGE_CONTAINER_INPUT) throw new Error("STORAGE_CONTAINER_INPUT is not defined.");
         if (!STORAGE_CONTAINER_OUTPUT) throw new Error("STORAGE_CONTAINER_OUTPUT is not defined.");
         if (!STORAGE_CONTAINER_SCHEMAS) throw new Error("STORAGE_CONTAINER_SCHEMAS is not defined.");
         if (!STORAGE_SAS && !STORAGE_KEY) throw new Error("STORAGE_SAS or STORAGE_KEY must be defined.");
-        if (context.log) context.log.verbose("validated succesfully");
+        if (context.log) context.log.verbose("validated succesfully.");
 
         // establish connections
         const input = new BlobHelper({
@@ -56,7 +57,9 @@ export async function run(context: Context) {
         bridgeLogs(schema, context);
 
         // get the message
+        if (context.log) context.log.verbose(`getting the message from queue "processing"...`);
         const message: message = context.bindings.queue;
+        if (context.log) context.log.verbose(`successfully got the message from queue "processing".`);
 
         // read schemas (with some parallelism)
         if (context.log) context.log.verbose(`getting schemas from "${STORAGE_CONTAINER_SCHEMAS}"...`);
