@@ -6,8 +6,7 @@
             "name": "queue",
             "direction": "in",
             "type": "queueTrigger",
-            "queueName": "processing",
-            "dataType": "string"
+            "queueName": "processing"
         }
     ]
 }
