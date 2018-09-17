@@ -2,10 +2,10 @@
   "version": 3,
   "targets": {
     ".NETStandard,Version=v2.0": {
-      "Microsoft.Azure.WebJobs/3.0.0-beta8": {
+      "Microsoft.Azure.WebJobs/3.0.0-rc1": {
         "type": "package",
         "dependencies": {
-          "Microsoft.Azure.WebJobs.Core": "3.0.0-beta8",
+          "Microsoft.Azure.WebJobs.Core": "3.0.0-rc1",
           "Microsoft.Extensions.Configuration": "2.1.0",
           "Microsoft.Extensions.Configuration.Abstractions": "2.1.0",
           "Microsoft.Extensions.Configuration.EnvironmentVariables": "2.1.0",
@@ -24,7 +24,7 @@
           "lib/netstandard2.0/Microsoft.Azure.WebJobs.Host.dll": {}
         }
       },
-      "Microsoft.Azure.WebJobs.Core/3.0.0-beta8": {
+      "Microsoft.Azure.WebJobs.Core/3.0.0-rc1": {
         "type": "package",
         "dependencies": {
           "System.ComponentModel.Annotations": "4.4.0",
@@ -37,10 +37,10 @@
           "lib/netstandard2.0/Microsoft.Azure.WebJobs.dll": {}
         }
       },
-      "Microsoft.Azure.WebJobs.Extensions.Storage/3.0.0-beta8": {
+      "Microsoft.Azure.WebJobs.Extensions.Storage/3.0.0-rc1": {
         "type": "package",
         "dependencies": {
-          "Microsoft.Azure.WebJobs": "3.0.0-beta8",
+          "Microsoft.Azure.WebJobs": "3.0.0-rc1",
           "WindowsAzure.Storage": "9.3.1"
         },
         "compile": {
@@ -1277,36 +1277,36 @@
     }
   },
   "libraries": {
-    "Microsoft.Azure.WebJobs/3.0.0-beta8": {
-      "sha512": "dJwtvfqa3TViluA4Q2TmPa67qdhntLjPHFjYTJIySOAbmvFChHF28+qQBaTW5EK5JVXy/YCi4Wd2WB8sz/CA4g==",
+    "Microsoft.Azure.WebJobs/3.0.0-rc1": {
+      "sha512": "gp3QgOOJ3rC08Sr/suzgG9XYDS27F/KaSO4j5eh8reyjYETqJ+GUMd5b2Ed8YAgYIMMudKnW0zqTZd4qCsePnA==",
       "type": "package",
-      "path": "microsoft.azure.webjobs/3.0.0-beta8",
+      "path": "microsoft.azure.webjobs/3.0.0-rc1",
       "files": [
         ".signature.p7s",
         "lib/netstandard2.0/Microsoft.Azure.WebJobs.Host.dll",
-        "microsoft.azure.webjobs.3.0.0-beta8.nupkg.sha512",
+        "microsoft.azure.webjobs.3.0.0-rc1.nupkg.sha512",
         "microsoft.azure.webjobs.nuspec"
       ]
     },
-    "Microsoft.Azure.WebJobs.Core/3.0.0-beta8": {
-      "sha512": "t2jwGBZGvqi4NBCm9jpuR9+7CiyJevBH/hDGmNFpUfbZEgYKzmEMwGdk7Nu+ypxyzcH7N1R3oqfoUD1Kx3v43Q==",
+    "Microsoft.Azure.WebJobs.Core/3.0.0-rc1": {
+      "sha512": "MCWd2kWI90RXFKITn7MWLLjdgOQxhRQ+fCaj5Anothpb5kgQyPSfkOHYN8Xfgd1SA7s0XXBHvwODCX9tjLG8pw==",
       "type": "package",
-      "path": "microsoft.azure.webjobs.core/3.0.0-beta8",
+      "path": "microsoft.azure.webjobs.core/3.0.0-rc1",
       "files": [
         ".signature.p7s",
         "lib/netstandard2.0/Microsoft.Azure.WebJobs.dll",
-        "microsoft.azure.webjobs.core.3.0.0-beta8.nupkg.sha512",
+        "microsoft.azure.webjobs.core.3.0.0-rc1.nupkg.sha512",
         "microsoft.azure.webjobs.core.nuspec"
       ]
     },
-    "Microsoft.Azure.WebJobs.Extensions.Storage/3.0.0-beta8": {
-      "sha512": "c9Ld0Xvx94lsWAS9hxOnTVcvXqkqo/0zPpG2J+J++lObPP9oPY27rFhBr0sXj64gb+chUojYM+4LCTNBIn0d5A==",
+    "Microsoft.Azure.WebJobs.Extensions.Storage/3.0.0-rc1": {
+      "sha512": "ZZ2rEwILEhQkluCRnUs6gR9kpq0lb5buIHIuqhM0wFOLd8ucsg77ZXzwsixokkZA4lxR/wR7W/v9XnddJMppGQ==",
       "type": "package",
-      "path": "microsoft.azure.webjobs.extensions.storage/3.0.0-beta8",
+      "path": "microsoft.azure.webjobs.extensions.storage/3.0.0-rc1",
       "files": [
         ".signature.p7s",
         "lib/netstandard2.0/Microsoft.Azure.WebJobs.Extensions.Storage.dll",
-        "microsoft.azure.webjobs.extensions.storage.3.0.0-beta8.nupkg.sha512",
+        "microsoft.azure.webjobs.extensions.storage.3.0.0-rc1.nupkg.sha512",
         "microsoft.azure.webjobs.extensions.storage.nuspec"
       ]
     },
@@ -4607,7 +4607,7 @@
   },
   "projectFileDependencyGroups": {
     ".NETStandard,Version=v2.0": [
-      "Microsoft.Azure.WebJobs.Extensions.Storage >= 3.0.0-beta8",
+      "Microsoft.Azure.WebJobs.Extensions.Storage >= 3.0.0-rc1",
       "Microsoft.Azure.WebJobs.Script.ExtensionsMetadataGenerator >= 1.0.0",
       "NETStandard.Library >= 2.0.3"
     ]
@@ -4648,7 +4648,7 @@
         "dependencies": {
           "Microsoft.Azure.WebJobs.Extensions.Storage": {
             "target": "Package",
-            "version": "[3.0.0-beta8, )"
+            "version": "[3.0.0-rc1, )"
           },
           "Microsoft.Azure.WebJobs.Script.ExtensionsMetadataGenerator": {
             "target": "Package",
