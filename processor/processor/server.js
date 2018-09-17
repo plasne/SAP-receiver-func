@@ -35,6 +35,8 @@ const STORAGE_KEY = process.env.STORAGE_KEY;
 async function run(context) {
     try {
         // validate
+        if (context.log)
+            context.log.verbose("validating configuration...");
         if (!STORAGE_ACCOUNT)
             throw new Error("STORAGE_ACCOUNT is not defined.");
         if (!STORAGE_CONTAINER_INPUT)
@@ -46,7 +48,7 @@ async function run(context) {
         if (!STORAGE_SAS && !STORAGE_KEY)
             throw new Error("STORAGE_SAS or STORAGE_KEY must be defined.");
         if (context.log)
-            context.log.verbose("validated succesfully");
+            context.log.verbose("validated succesfully.");
         // establish connections
         const input = new BlobHelper_1.default({
             account: STORAGE_ACCOUNT,
@@ -66,7 +68,11 @@ async function run(context) {
         });
         bridgeLogs(schema, context);
         // get the message
+        if (context.log)
+            context.log.verbose(`getting the message from queue "processing"...`);
         const message = context.bindings.queue;
+        if (context.log)
+            context.log.verbose(`successfully got the message from queue "processing".`);
         // read schemas (with some parallelism)
         if (context.log)
             context.log.verbose(`getting schemas from "${STORAGE_CONTAINER_SCHEMAS}"...`);
