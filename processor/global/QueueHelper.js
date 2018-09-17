@@ -46,9 +46,16 @@ class QueueHelper {
     }
     // returns true if there are any messages in the queue
     async hasMessages() {
-        const peekMessage = util.promisify(azs.QueueService.prototype.peekMessage).bind(this.service);
-        const result = await peekMessage(this.name);
-        return (result != undefined);
+        const getQueueMetadata = util.promisify(azs.QueueService.prototype.getQueueMetadata).bind(this.service);
+        const result = await getQueueMetadata(this.name);
+        if (result.approximateMessageCount == null) {
+            this.events.emit("verbose", `approximate message count is queue "${this.name}" is "indeterminate".`);
+            return true; // it is safer to assume there could be
+        }
+        else {
+            this.events.emit("verbose", `approximate message count is queue "${this.name}" is "${result.approximateMessageCount}".`);
+            return (result.approximateMessageCount > 0);
+        }
     }
     // add a single message to the queue
     enqueueMessage(message) {

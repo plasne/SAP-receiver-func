@@ -2,9 +2,10 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Attach to C# Functions",
-      "type": "coreclr",
+      "type": "node",
       "request": "attach",
+      "name": "Attach to JavaScript Function",
+      "port": 9229,
       "processId": "${command:azureFunctions.pickProcess}"
     }
   ]

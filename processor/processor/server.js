@@ -79,6 +79,7 @@ async function run(context) {
         const files = await input.loadFiles(message.filenames, "text");
         // batch up the rows so it can write more efficiently
         const batch = [];
+        // NOTE: no schemas are being applied
         // apply schemas
         for (const file of files) {
             const doc = new dom.DOMParser().parseFromString(file);

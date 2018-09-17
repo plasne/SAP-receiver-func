@@ -1,0 +1,19 @@
+{
+    "name": "MATMA05",
+    "_filename": "matmas-${partition}.csv",
+    "filename": "matmas-block.csv",
+    "partitions": 4,
+    "identify": "/MATMAS05",
+    "columns": [
+        {
+            "header": "DOCNUM",
+            "path": "/MATMAS05/IDOC/EDI_DC40/DOCNUM",
+            "default": "0000000000000000",
+            "enclosure": "\""
+        },
+        {
+            "header": "BESKZ",
+            "path": "/MATMAS05/IDOC/E1MARAM/E1MARCM/BESKZ"
+        }
+    ]
+}
