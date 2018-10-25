@@ -1,7 +1,11 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
+// FUNCTION: processor()
+// AUTHOR:   Peter Lasne, Principal Software Development Engineer
+// PURPOSE:  This function:
+//           1. loads all schemas
+//           2. loads the set of files it was assigned from blob storage
+//           3. attempts to apply each schema to each file generating rows
+//           4. all rows updates are flushed to storage
 var __importStar = (this && this.__importStar) || function (mod) {
     if (mod && mod.__esModule) return mod;
     var result = {};
@@ -9,21 +13,14 @@ var __importStar = (this && this.__importStar) || function (mod) {
     result["default"] = mod;
     return result;
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-const BlobHelper_1 = __importDefault(require("../global/BlobHelper"));
-const xpath = __importStar(require("xpath"));
 const dom = __importStar(require("xmldom"));
-//import * as azs from "azure-storage";
-function bridgeLogs(helper, context) {
-    if (context.log) {
-        helper.events.on("info", msg => { if (context.log)
-            context.log.info(msg); });
-        helper.events.on("verbose", msg => { if (context.log)
-            context.log.verbose(msg); });
-        helper.events.on("error", msg => { if (context.log)
-            context.log.error(msg); });
-    }
-}
+const xpath = __importStar(require("xpath"));
+const AzureBlob_1 = __importDefault(require("../global/AzureBlob"));
+const AzureBlobOperation_1 = __importDefault(require("../global/AzureBlobOperation"));
 // variables
 const STORAGE_ACCOUNT = process.env.STORAGE_ACCOUNT;
 const STORAGE_CONTAINER_INPUT = process.env.STORAGE_CONTAINER_INPUT;
@@ -36,99 +33,109 @@ async function run(context) {
     try {
         // validate
         if (context.log)
-            context.log.verbose("validating configuration...");
-        if (!STORAGE_ACCOUNT)
-            throw new Error("STORAGE_ACCOUNT is not defined.");
-        if (!STORAGE_CONTAINER_INPUT)
-            throw new Error("STORAGE_CONTAINER_INPUT is not defined.");
-        if (!STORAGE_CONTAINER_OUTPUT)
-            throw new Error("STORAGE_CONTAINER_OUTPUT is not defined.");
-        if (!STORAGE_CONTAINER_SCHEMAS)
-            throw new Error("STORAGE_CONTAINER_SCHEMAS is not defined.");
-        if (!STORAGE_SAS && !STORAGE_KEY)
-            throw new Error("STORAGE_SAS or STORAGE_KEY must be defined.");
+            context.log.verbose('validating configuration...');
+        if (!STORAGE_ACCOUNT) {
+            throw new Error('STORAGE_ACCOUNT is not defined.');
+        }
+        if (!STORAGE_CONTAINER_INPUT) {
+            throw new Error('STORAGE_CONTAINER_INPUT is not defined.');
+        }
+        if (!STORAGE_CONTAINER_OUTPUT) {
+            throw new Error('STORAGE_CONTAINER_OUTPUT is not defined.');
+        }
+        if (!STORAGE_CONTAINER_SCHEMAS) {
+            throw new Error('STORAGE_CONTAINER_SCHEMAS is not defined.');
+        }
+        if (!STORAGE_SAS && !STORAGE_KEY) {
+            throw new Error('STORAGE_SAS or STORAGE_KEY must be defined.');
+        }
         if (context.log)
-            context.log.verbose("validated succesfully.");
+            context.log.verbose('validated succesfully.');
         // establish connections
-        const input = new BlobHelper_1.default({
+        const blob = new AzureBlob_1.default({
             account: STORAGE_ACCOUNT,
-            sas: STORAGE_SAS,
             key: STORAGE_KEY,
-            container: STORAGE_CONTAINER_INPUT
+            sas: STORAGE_SAS
         });
-        bridgeLogs(input, context);
-        const output = new BlobHelper_1.default({
-            service: input.service,
-            container: STORAGE_CONTAINER_OUTPUT
-        });
-        bridgeLogs(output, context);
-        const schema = new BlobHelper_1.default({
-            service: input.service,
-            container: STORAGE_CONTAINER_SCHEMAS
-        });
-        bridgeLogs(schema, context);
         // get the message
-        if (context.log)
-            context.log.verbose(`getting the message from queue "processing"...`);
+        if (context.log) {
+            context.log.info(`getting the message from queue "processing"...`);
+        }
         const message = context.bindings.queue;
-        if (context.log)
-            context.log.verbose(`successfully got the message from queue "processing".`);
-        // read schemas (with some parallelism)
-        if (context.log)
-            context.log.verbose(`getting schemas from "${STORAGE_CONTAINER_SCHEMAS}"...`);
-        const schemaBlobs = await schema.list(/.+\.json$/g);
-        const schemaFilenames = schemaBlobs.map(s => s.name);
-        const schemas = await schema.loadFiles(schemaFilenames, "json");
-        // read the input files
-        if (context.log)
-            context.log.verbose(`getting blobs from "${STORAGE_CONTAINER_INPUT}/${message.partition}"...`);
-        const files = await input.loadFiles(message.filenames, "text");
+        if (context.log) {
+            context.log.info(`successfully got the message from queue "processing" (${message.filenames.length} files).`);
+        }
+        // load all schemas
+        if (context.log) {
+            context.log.info(`getting schemas from "${STORAGE_CONTAINER_SCHEMAS}"...`);
+        }
+        const schemas = blob
+            .loadAsStream(STORAGE_CONTAINER_SCHEMAS, undefined, {
+            transform: data => JSON.parse(data)
+        })
+            .on('error', error => {
+            if (context.log)
+                context.log.error(error);
+        });
+        await schemas.waitForEnd();
         // batch up the rows so it can write more efficiently
         const batch = [];
-        // NOTE: no schemas are being applied
-        // apply schemas
-        for (const file of files) {
-            const doc = new dom.DOMParser().parseFromString(file);
-            for (const s of schemas) {
+        // start processing files
+        if (context.log) {
+            context.log.info(`getting blobs from "${STORAGE_CONTAINER_INPUT}/${message.partition}"...`);
+        }
+        const loader = blob
+            .stream(message.filenames, {
+            transform: (filename) => new AzureBlobOperation_1.default(STORAGE_CONTAINER_INPUT, 'load', filename)
+        })
+            .on('data', (data, op) => {
+            if (context.log) {
+                context.log.info(`looking for schemas for ${op.filename}`);
+            }
+            const doc = new dom.DOMParser().parseFromString(data);
+            for (const s of schemas.buffer) {
                 if (xpath.select(s.identify, doc).length > 0) {
-                    if (context.log)
-                        context.log.verbose(`schema identified as "${s.name}".`);
+                    if (context.log) {
+                        context.log.info(`schema identified as "${s.name}"`);
+                    }
                     // extract the columns
                     const row = [];
                     for (const column of s.columns) {
-                        const enclosure = column.enclosure || "";
-                        const _default = column.default || "";
+                        const enclosure = column.enclosure || '';
+                        const dflt = column.default || '';
                         const value = xpath.select1(`string(${column.path})`, doc);
                         if (value) {
                             row.push(`${enclosure}${value}${enclosure}`);
                         }
                         else {
-                            row.push(`${enclosure}${_default}${enclosure}`);
+                            row.push(`${enclosure}${dflt}${enclosure}`);
                         }
                     }
                     // buffer the row
                     const filename = `${message.partition}/${s.filename}`;
                     let entry = batch.find(f => f.filename === filename);
                     if (!entry) {
-                        entry = {
-                            filename: filename,
-                            content: ""
-                        };
+                        entry = new AzureBlobOperation_1.default(STORAGE_CONTAINER_OUTPUT, 'append', filename);
                         batch.push(entry);
                     }
-                    entry.content += row.join(",") + "\n";
+                    entry.content += row.join(',') + '\n';
                 }
             }
-        }
+        })
+            .on('error', error => {
+            if (context.log)
+                context.log.error(error);
+        });
+        // wait for files to be fully processed
+        await loader.waitForEnd();
         // flush all the writes (with concurrency)
-        await output.appendToBlobs(batch);
+        const writer = blob.stream(batch);
+        await writer.waitForEnd();
     }
     catch (error) {
         // TODO: also log to some permanent space
         if (context.log)
             context.log.error(error.stack);
     }
-    // respond
-    context.done();
 }
 exports.run = run;

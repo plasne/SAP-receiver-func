@@ -1,5 +1,5 @@
 {
-    "disabled": false,
+    "scriptFile": "receiver/server.js",
     "bindings": [
         {
             "name": "req",
