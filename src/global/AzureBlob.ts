@@ -143,11 +143,11 @@ export default class AzureBlob {
                                     op.content || ''
                                 )
                                     .then(result => {
-                                        streams.out.emit('success', result);
+                                        streams.out.emit('success', result, op);
                                         op.resolve(result);
                                     })
                                     .catch(error => {
-                                        streams.out.emit('error', error);
+                                        streams.out.emit('error', error, op);
                                         op.reject(error);
                                     });
                             }
@@ -160,11 +160,11 @@ export default class AzureBlob {
                                     op.content
                                 )
                                     .then(result => {
-                                        streams.out.emit('success', result);
+                                        streams.out.emit('success', result, op);
                                         op.resolve(result);
                                     })
                                     .catch(error => {
-                                        streams.out.emit('error', error);
+                                        streams.out.emit('error', error, op);
                                         op.reject(error);
                                     });
                             }
@@ -177,7 +177,7 @@ export default class AzureBlob {
                                         op.resolve(result);
                                     })
                                     .catch(error => {
-                                        streams.out.emit('error', error);
+                                        streams.out.emit('error', error, op);
                                         op.reject(error);
                                     });
                             }
@@ -201,7 +201,11 @@ export default class AzureBlob {
                                             }
                                             resolve();
                                         } else {
-                                            streams.out.emit('error', error);
+                                            streams.out.emit(
+                                                'error',
+                                                error,
+                                                op
+                                            );
                                             op.reject(error);
                                             reject(error);
                                         }
@@ -228,7 +232,11 @@ export default class AzureBlob {
                                             }
                                             resolve();
                                         } else {
-                                            streams.out.emit('error', error);
+                                            streams.out.emit(
+                                                'error',
+                                                error,
+                                                op
+                                            );
                                             op.reject(error);
                                             reject(error);
                                         }

@@ -94,11 +94,11 @@ class AzureBlob {
                         if (op.filename) {
                             return this.appendToBlob(op.container, op.filename, op.content || '')
                                 .then(result => {
-                                streams.out.emit('success', result);
+                                streams.out.emit('success', result, op);
                                 op.resolve(result);
                             })
                                 .catch(error => {
-                                streams.out.emit('error', error);
+                                streams.out.emit('error', error, op);
                                 op.reject(error);
                             });
                         }
@@ -107,11 +107,11 @@ class AzureBlob {
                         if (op.filename) {
                             return this.createOrReplaceAppendBlob(op.container, op.filename, op.content)
                                 .then(result => {
-                                streams.out.emit('success', result);
+                                streams.out.emit('success', result, op);
                                 op.resolve(result);
                             })
                                 .catch(error => {
-                                streams.out.emit('error', error);
+                                streams.out.emit('error', error, op);
                                 op.reject(error);
                             });
                         }
@@ -124,7 +124,7 @@ class AzureBlob {
                                 op.resolve(result);
                             })
                                 .catch(error => {
-                                streams.out.emit('error', error);
+                                streams.out.emit('error', error, op);
                                 op.reject(error);
                             });
                         }
@@ -147,7 +147,7 @@ class AzureBlob {
                                     resolve();
                                 }
                                 else {
-                                    streams.out.emit('error', error);
+                                    streams.out.emit('error', error, op);
                                     op.reject(error);
                                     reject(error);
                                 }
@@ -171,7 +171,7 @@ class AzureBlob {
                                     resolve();
                                 }
                                 else {
-                                    streams.out.emit('error', error);
+                                    streams.out.emit('error', error, op);
                                     op.reject(error);
                                     reject(error);
                                 }

@@ -47,13 +47,6 @@ export async function run(context: Context) {
         }
         if (context.log) context.log.verbose('validated succesfully.');
 
-        // establish connections
-        const blob = new AzureBlob({
-            account: STORAGE_ACCOUNT,
-            key: STORAGE_KEY,
-            sas: STORAGE_SAS
-        });
-
         // get the message
         if (context.log) {
             context.log.info(`getting the message from queue "processing"...`);
@@ -67,97 +60,183 @@ export async function run(context: Context) {
             );
         }
 
-        // load all schemas
-        if (context.log) {
-            context.log.info(
-                `getting schemas from "${STORAGE_CONTAINER_SCHEMAS}"...`
-            );
-        }
-        const schemas = blob
-            .loadAsStream<any>(STORAGE_CONTAINER_SCHEMAS, undefined, {
-                transform: data => JSON.parse(data)
-            })
-            .on('error', error => {
-                if (context.log) context.log.error(error);
-            });
-        await schemas.waitForEnd();
+        // establish connections
+        const blob = new AzureBlob({
+            account: STORAGE_ACCOUNT,
+            key: STORAGE_KEY,
+            sas: STORAGE_SAS
+        });
 
         // batch up the rows so it can write more efficiently
         const batch: AzureBlobOperation[] = [];
 
-        // start processing files
-        if (context.log) {
-            context.log.info(
-                `getting blobs from "${STORAGE_CONTAINER_INPUT}/${
-                    message.partition
-                }"...`
+        // define error function
+        const raise = (msg: string, partition?: string, filename?: string) => {
+            const formatted = `${new Date().toISOString()} ${
+                partition ? '[' + partition + ']' : ''
+            } ${filename ? '[' + filename + ']' : ''} ${msg}\n`;
+            batch.push(
+                new AzureBlobOperation(
+                    STORAGE_CONTAINER_OUTPUT,
+                    'append',
+                    `${message.partition}/errors.txt`,
+                    formatted
+                )
             );
-        }
-        const loader = blob
-            .stream<string, string>(message.filenames, {
-                transform: (filename: string) =>
-                    new AzureBlobOperation(
-                        STORAGE_CONTAINER_INPUT,
-                        'load',
-                        filename
-                    )
-            })
-            .on('data', (data: string, op: any) => {
-                if (context.log) {
-                    context.log.info(`looking for schemas for ${op.filename}`);
-                }
-                const doc = new dom.DOMParser().parseFromString(data);
-                for (const s of schemas.buffer) {
-                    if (xpath.select(s.identify, doc).length > 0) {
+        };
+
+        // start processing
+        try {
+            // load all schemas
+            if (context.log) {
+                context.log.info(
+                    `getting schemas from "${STORAGE_CONTAINER_SCHEMAS}"...`
+                );
+            }
+            const schemas = blob
+                .loadAsStream<any>(STORAGE_CONTAINER_SCHEMAS, undefined, {
+                    transform: data => JSON.parse(data)
+                })
+                .on('error', error => {
+                    if (context.log) context.log.error(error);
+                });
+            await schemas.waitForEnd();
+
+            // start processing files
+            if (context.log) {
+                context.log.info(
+                    `getting blobs from "${STORAGE_CONTAINER_INPUT}/${
+                        message.partition
+                    }"...`
+                );
+            }
+            const loader = blob
+                .stream<string, string>(message.filenames, {
+                    transform: (filename: string) =>
+                        new AzureBlobOperation(
+                            STORAGE_CONTAINER_INPUT,
+                            'load',
+                            filename
+                        )
+                })
+                .on('data', (data: string, op: AzureBlobOperation) => {
+                    // start logging
+                    let schemasFound = 0;
+                    if (context.log) {
+                        context.log.info(
+                            `looking for schemas for ${op.filename}...`
+                        );
+                    }
+
+                    // parse as XML
+                    let doc: Document | undefined;
+                    try {
+                        doc = new dom.DOMParser().parseFromString(data);
+                    } catch (error) {
                         if (context.log) {
                             context.log.info(
-                                `schema identified as "${s.name}"`
+                                'the file was not properly formatted XML, it will be skipped.'
                             );
                         }
+                        raise(
+                            'the file was not properly formatted XML, it will be skipped.',
+                            message.partition,
+                            op.filename
+                        );
+                    }
 
-                        // extract the columns
-                        const row: string[] = [];
-                        for (const column of s.columns) {
-                            const enclosure = column.enclosure || '';
-                            const dflt = column.default || '';
-                            const value = xpath.select1(
-                                `string(${column.path})`,
-                                doc
-                            );
-                            if (value) {
-                                row.push(`${enclosure}${value}${enclosure}`);
-                            } else {
-                                row.push(`${enclosure}${dflt}${enclosure}`);
+                    // see which schemas match
+                    if (doc) {
+                        for (const s of schemas.buffer) {
+                            if (xpath.select(s.identify, doc).length > 0) {
+                                // identify as a found schema
+                                if (context.log) {
+                                    context.log.info(
+                                        `schema identified as "${s.name}".`
+                                    );
+                                }
+                                schemasFound++;
+
+                                // extract the columns
+                                const row: string[] = [];
+                                for (const column of s.columns) {
+                                    const enclosure = column.enclosure || '';
+                                    const dflt = column.default || '';
+                                    const value = xpath.select1(
+                                        `string(${column.path})`,
+                                        doc
+                                    );
+                                    if (value) {
+                                        row.push(
+                                            `${enclosure}${value}${enclosure}`
+                                        );
+                                    } else {
+                                        row.push(
+                                            `${enclosure}${dflt}${enclosure}`
+                                        );
+                                    }
+                                }
+
+                                // buffer the row
+                                const filename = `${message.partition}/${
+                                    s.filename
+                                }`;
+                                let entry = batch.find(
+                                    f => f.filename === filename
+                                );
+                                if (!entry) {
+                                    entry = new AzureBlobOperation(
+                                        STORAGE_CONTAINER_OUTPUT,
+                                        'append',
+                                        filename
+                                    );
+                                    batch.push(entry);
+                                }
+                                entry.content += row.join(',') + '\n';
                             }
                         }
 
-                        // buffer the row
-                        const filename = `${message.partition}/${s.filename}`;
-                        let entry = batch.find(f => f.filename === filename);
-                        if (!entry) {
-                            entry = new AzureBlobOperation(
-                                STORAGE_CONTAINER_OUTPUT,
-                                'append',
-                                filename
+                        // raise error if no schemas were found
+                        if (schemasFound < 1) {
+                            if (context.log) {
+                                context.log.error(
+                                    'no schemas were found that match this file.'
+                                );
+                            }
+                            raise(
+                                'no schemas were found that match this file.',
+                                message.partition,
+                                op.filename
                             );
-                            batch.push(entry);
                         }
-                        entry.content += row.join(',') + '\n';
                     }
-                }
-            })
-            .on('error', error => {
-                if (context.log) context.log.error(error);
-            });
+                })
+                .on('error', (error: Error, op: AzureBlobOperation) => {
+                    if (context.log) context.log.error(error);
+                    raise(error.message, message.partition, op.filename);
+                });
 
-        // wait for files to be fully processed
-        await loader.waitForEnd();
+            // wait for files to be fully processed
+            await loader.waitForEnd();
+        } catch (error) {
+            if (context.log) context.log.error(error.stack);
+            raise(error.stack);
+        }
 
-        // flush all the writes (with concurrency)
+        // flush all the writes
+        if (context.log) {
+            context.log.info(`flushing ${batch.length} write(s)...`);
+            for (const op of batch) {
+                context.log.info(JSON.stringify(op));
+            }
+        }
         const writer = blob.stream<AzureBlobOperation, any>(batch);
         await writer.waitForEnd();
+        if (context.log) {
+            context.log.info(`all writes flushed.`);
+        }
     } catch (error) {
-        // TODO: also log to some permanent space
         if (context.log) context.log.error(error.stack);
+        process.exit(1);
     }
 }
