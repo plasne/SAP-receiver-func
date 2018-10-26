@@ -118,8 +118,28 @@ async function run(context) {
                 context.log.error(error);
             errors++;
         });
-        // start fetching blobs
+        // create an output stream for queue messages
+        const enqueuer = queue.streams({}, {
+            processAfter: queue.createQueueIfNotExists('processing')
+        });
+        enqueuer.out.on('error', (error) => {
+            if (context.log)
+                context.log.error(error);
+            errors++;
+        });
+        // define the dispatch process
+        let batch = [];
         let queued = 0;
+        const dispatch = () => {
+            const message = {
+                filenames: batch,
+                partition
+            };
+            queued += batch.length;
+            enqueuer.in.push(new AzureQueueOperation_1.default('processing', 'enqueue', message));
+            batch = [];
+        };
+        // start fetching blobs
         const filenames = blob
             .listAsStream(STORAGE_CONTAINER_INPUT, partition, {
             transform: data => {
@@ -131,36 +151,22 @@ async function run(context) {
                 }
             }
         })
+            .on('data', (filename) => {
+            batch.push(filename);
+            if (batch.length >= FILES_PER_MESSAGE)
+                dispatch();
+        })
+            .on('end', () => {
+            dispatch();
+            enqueuer.in.end();
+        })
             .on('error', error => {
             if (context.log)
                 context.log.error(error);
             errors++;
         });
-        // create an output stream for queue messages
-        const enqueuer = queue.streams({}, {
-            processAfter: queue.createQueueIfNotExists('processing')
-        });
-        enqueuer.out.on('error', (error) => {
-            if (context.log)
-                context.log.error(error);
-            errors++;
-        });
-        // process the filenames every second
+        // monitor what is happening
         const statusTimer = setInterval(() => {
-            // batch
-            if (filenames.buffer.length > 0) {
-                const batch = filenames.buffer.splice(0, FILES_PER_MESSAGE);
-                const message = {
-                    filenames: batch,
-                    partition
-                };
-                queued += batch.length;
-                enqueuer.in.push(new AzureQueueOperation_1.default('processing', 'enqueue', message));
-            }
-            else if (filenames.state === 'ended') {
-                enqueuer.in.end();
-            }
-            // log progress
             if (context.log) {
                 context.log.info(`${queued} blobs queued for processing, ${filenames.buffer.length} in the buffer...`);
             }

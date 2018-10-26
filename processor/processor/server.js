@@ -138,7 +138,7 @@ async function run(context) {
                             const filename = `${message.partition}/${s.filename}`;
                             let entry = batch.find(f => f.filename === filename);
                             if (!entry) {
-                                entry = new AzureBlobOperation_1.default(STORAGE_CONTAINER_OUTPUT, 'append', filename);
+                                entry = new AzureBlobOperation_1.default(STORAGE_CONTAINER_OUTPUT, 'append', filename, '');
                                 batch.push(entry);
                             }
                             entry.content += row.join(',') + '\n';
@@ -169,9 +169,6 @@ async function run(context) {
         // flush all the writes
         if (context.log) {
             context.log.info(`flushing ${batch.length} write(s)...`);
-            for (const op of batch) {
-                context.log.info(JSON.stringify(op));
-            }
         }
         const writer = blob.stream(batch);
         await writer.waitForEnd();

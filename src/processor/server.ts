@@ -188,7 +188,8 @@ export async function run(context: Context) {
                                     entry = new AzureBlobOperation(
                                         STORAGE_CONTAINER_OUTPUT,
                                         'append',
-                                        filename
+                                        filename,
+                                        ''
                                     );
                                     batch.push(entry);
                                 }
@@ -226,9 +227,6 @@ export async function run(context: Context) {
         // flush all the writes
         if (context.log) {
             context.log.info(`flushing ${batch.length} write(s)...`);
-            for (const op of batch) {
-                context.log.info(JSON.stringify(op));
-            }
         }
         const writer = blob.stream<AzureBlobOperation, any>(batch);
         await writer.waitForEnd();

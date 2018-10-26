@@ -147,23 +147,6 @@ export async function run(context: Context) {
                 errors++;
             });
 
-        // start fetching blobs
-        let queued = 0;
-        const filenames = blob
-            .listAsStream<string>(STORAGE_CONTAINER_INPUT, partition, {
-                transform: data => {
-                    if (/.+\.xml$/g.test(data.name)) {
-                        return data.name;
-                    } else {
-                        return null;
-                    }
-                }
-            })
-            .on('error', error => {
-                if (context.log) context.log.error(error);
-                errors++;
-            });
-
         // create an output stream for queue messages
         const enqueuer = queue.streams<AzureQueueOperation, string>(
             {},
@@ -176,24 +159,47 @@ export async function run(context: Context) {
             errors++;
         });
 
-        // process the filenames every second
-        const statusTimer = setInterval(() => {
-            // batch
-            if (filenames.buffer.length > 0) {
-                const batch = filenames.buffer.splice(0, FILES_PER_MESSAGE);
-                const message: queueMessage = {
-                    filenames: batch,
-                    partition
-                };
-                queued += batch.length;
-                enqueuer.in.push(
-                    new AzureQueueOperation('processing', 'enqueue', message)
-                );
-            } else if (filenames.state === 'ended') {
-                enqueuer.in.end();
-            }
+        // define the dispatch process
+        let batch: string[] = [];
+        let queued = 0;
+        const dispatch = () => {
+            const message: queueMessage = {
+                filenames: batch,
+                partition
+            };
+            queued += batch.length;
+            enqueuer.in.push(
+                new AzureQueueOperation('processing', 'enqueue', message)
+            );
+            batch = [];
+        };
 
-            // log progress
+        // start fetching blobs
+        const filenames = blob
+            .listAsStream<string>(STORAGE_CONTAINER_INPUT, partition, {
+                transform: data => {
+                    if (/.+\.xml$/g.test(data.name)) {
+                        return data.name;
+                    } else {
+                        return null;
+                    }
+                }
+            })
+            .on('data', (filename: string) => {
+                batch.push(filename);
+                if (batch.length >= FILES_PER_MESSAGE) dispatch();
+            })
+            .on('end', () => {
+                dispatch();
+                enqueuer.in.end();
+            })
+            .on('error', error => {
+                if (context.log) context.log.error(error);
+                errors++;
+            });
+
+        // monitor what is happening
+        const statusTimer = setInterval(() => {
             if (context.log) {
                 context.log.info(
                     `${queued} blobs queued for processing, ${
