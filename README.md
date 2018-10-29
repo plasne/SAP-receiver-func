@@ -76,7 +76,6 @@ In the host.json file, you can control how the Processor function reads from the
 
 ```json
 {
-    ...
     "queues": {
         "maxPollingInterval": 1000,
         "visibilityTimeout": "00:00:30",
