@@ -1,8 +1,6 @@
 {
     "name": "MATMA05",
-    "_filename": "matmas-${partition}.csv",
     "filename": "matmas-block.csv",
-    "partitions": 4,
     "identify": "/MATMAS05",
     "columns": [
         {
