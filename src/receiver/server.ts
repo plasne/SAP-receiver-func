@@ -6,6 +6,8 @@
 import { Context, HttpStatusCode } from 'azure-functions-ts-essentials';
 import moment = require('moment');
 require('moment-round');
+import * as http from 'http';
+import * as https from 'https';
 import { v4 as uuid } from 'uuid';
 import AzureBlob from '../global/AzureBlob';
 
@@ -17,6 +19,14 @@ const STORAGE_SAS: string | undefined = process.env.STORAGE_SAS;
 const STORAGE_KEY: string | undefined = process.env.STORAGE_KEY;
 const FOLDER_PERIOD: string = process.env.FOLDER_PERIOD || '1 hour';
 const FOLDER_FORMAT: string = process.env.FOLDER_FORMAT || 'YYYYMMDDTHHmmss';
+
+// modify the agents
+const httpAgent: any = http.globalAgent;
+httpAgent.keepAlive = true;
+httpAgent.maxSockets = 30;
+const httpsAgent: any = https.globalAgent;
+httpsAgent.keepAlive = true;
+httpsAgent.maxSockets = 30;
 
 export async function run(context: Context) {
     try {
@@ -42,7 +52,8 @@ export async function run(context: Context) {
         const blob = new AzureBlob({
             account: STORAGE_ACCOUNT,
             key: STORAGE_KEY,
-            sas: STORAGE_SAS
+            sas: STORAGE_SAS,
+            useGlobalAgent: true
         });
 
         // determine the timeslice to apply the files to

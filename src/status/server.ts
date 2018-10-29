@@ -5,11 +5,21 @@
 
 // includes
 import { Context, HttpStatusCode } from 'azure-functions-ts-essentials';
+import * as http from 'http';
+import * as https from 'https';
 import AzureQueue from '../global/AzureQueue';
 
 // variables
 const AZURE_WEB_JOBS_STORAGE: string | undefined =
     process.env.AzureWebJobsStorage;
+
+// modify the agents
+const httpAgent: any = http.globalAgent;
+httpAgent.keepAlive = true;
+httpAgent.maxSockets = 30;
+const httpsAgent: any = https.globalAgent;
+httpsAgent.keepAlive = true;
+httpsAgent.maxSockets = 30;
 
 // module
 export async function run(context: Context) {
@@ -28,7 +38,8 @@ export async function run(context: Context) {
         // connect to the queue
         const queue = new AzureQueue({
             connectionString: AZURE_WEB_JOBS_STORAGE,
-            encoder: 'base64'
+            encoder: 'base64',
+            useGlobalAgent: true
         });
 
         // respond

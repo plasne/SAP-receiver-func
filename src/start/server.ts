@@ -15,6 +15,8 @@
 
 // includes
 import { Context, HttpStatusCode } from 'azure-functions-ts-essentials';
+import * as http from 'http';
+import * as https from 'https';
 import AzureBlob from '../global/AzureBlob';
 import AzureBlobOperation from '../global/AzureBlobOperation';
 import AzureQueue from '../global/AzureQueue';
@@ -47,6 +49,14 @@ const FILES_PER_MESSAGE: number = valueOrDefault(
     process.env.FILES_PER_MESSAGE,
     10
 );
+
+// modify the agents
+const httpAgent: any = http.globalAgent;
+httpAgent.keepAlive = true;
+httpAgent.maxSockets = 30;
+const httpsAgent: any = https.globalAgent;
+httpsAgent.keepAlive = true;
+httpsAgent.maxSockets = 30;
 
 // module
 export async function run(context: Context) {
@@ -87,11 +97,13 @@ export async function run(context: Context) {
         const blob = new AzureBlob({
             account: STORAGE_ACCOUNT,
             key: STORAGE_KEY,
-            sas: STORAGE_SAS
+            sas: STORAGE_SAS,
+            useGlobalAgent: true
         });
         const queue = new AzureQueue({
             connectionString: AZURE_WEB_JOBS_STORAGE,
-            encoder: 'base64'
+            encoder: 'base64',
+            useGlobalAgent: true
         });
 
         // create an output stream for writing the files

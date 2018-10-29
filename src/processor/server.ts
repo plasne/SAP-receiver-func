@@ -8,6 +8,8 @@
 
 // includes
 import { Context } from 'azure-functions-ts-essentials';
+import * as http from 'http';
+import * as https from 'https';
 import * as dom from 'xmldom';
 import * as xpath from 'xpath';
 import AzureBlob from '../global/AzureBlob';
@@ -24,6 +26,14 @@ const STORAGE_CONTAINER_SCHEMAS: string | undefined =
     process.env.STORAGE_CONTAINER_SCHEMAS;
 const STORAGE_SAS: string | undefined = process.env.STORAGE_SAS;
 const STORAGE_KEY: string | undefined = process.env.STORAGE_KEY;
+
+// modify the agents
+const httpAgent: any = http.globalAgent;
+httpAgent.keepAlive = true;
+httpAgent.maxSockets = 30;
+const httpsAgent: any = https.globalAgent;
+httpsAgent.keepAlive = true;
+httpsAgent.maxSockets = 30;
 
 // module
 export async function run(context: Context) {
@@ -64,7 +74,8 @@ export async function run(context: Context) {
         const blob = new AzureBlob({
             account: STORAGE_ACCOUNT,
             key: STORAGE_KEY,
-            sas: STORAGE_SAS
+            sas: STORAGE_SAS,
+            useGlobalAgent: true
         });
 
         // batch up the rows so it can write more efficiently
