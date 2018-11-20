@@ -131,6 +131,11 @@ A schema should look like this sample:
 
 As mentioned in the schema section above, it is possible for a document to contain more than 1 document. The _selector_ determines where the document or documents will be located in the file.
 
+Consider that large numbers of documents in a file might require:
+
+-   setting FILES_PER_MESSAGE to a smaller value
+-   setting visibilityTimeout to a longer duration
+
 ## Partitioning
 
 When a IDOC file is received by the Receiver Function it must be written into a partition in the input container. The partition name is determed by the FOLDER_PERIOD and FOLDER_FORMAT.
