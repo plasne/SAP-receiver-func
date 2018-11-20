@@ -17,6 +17,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+const http = __importStar(require("http"));
+const https = __importStar(require("https"));
 const dom = __importStar(require("xmldom"));
 const xpath = __importStar(require("xpath"));
 const AzureBlob_1 = __importDefault(require("../global/AzureBlob"));
@@ -28,6 +30,13 @@ const STORAGE_CONTAINER_OUTPUT = process.env.STORAGE_CONTAINER_OUTPUT;
 const STORAGE_CONTAINER_SCHEMAS = process.env.STORAGE_CONTAINER_SCHEMAS;
 const STORAGE_SAS = process.env.STORAGE_SAS;
 const STORAGE_KEY = process.env.STORAGE_KEY;
+// modify the agents
+const httpAgent = http.globalAgent;
+httpAgent.keepAlive = true;
+httpAgent.maxSockets = 30;
+const httpsAgent = https.globalAgent;
+httpsAgent.keepAlive = true;
+httpsAgent.maxSockets = 30;
 // module
 async function run(context) {
     try {
@@ -63,7 +72,8 @@ async function run(context) {
         const blob = new AzureBlob_1.default({
             account: STORAGE_ACCOUNT,
             key: STORAGE_KEY,
-            sas: STORAGE_SAS
+            sas: STORAGE_SAS,
+            useGlobalAgent: true
         });
         // batch up the rows so it can write more efficiently
         const batch = [];
@@ -114,34 +124,38 @@ async function run(context) {
                 }
                 // see which schemas match
                 if (doc) {
-                    for (const s of schemas.buffer) {
-                        if (xpath.select(s.identify, doc).length > 0) {
+                    for (const schema of schemas.buffer) {
+                        const documents = xpath.select(schema.identifier, doc);
+                        if (documents.length > 0) {
                             // identify as a found schema
                             if (context.log) {
-                                context.log.info(`schema identified as "${s.name}".`);
+                                context.log.info(`schema identified as "${schema.name}".`);
                             }
                             schemasFound++;
-                            // extract the columns
-                            const row = [];
-                            for (const column of s.columns) {
-                                const enclosure = column.enclosure || '';
-                                const dflt = column.default || '';
-                                const value = xpath.select1(`string(${column.path})`, doc);
-                                if (value) {
-                                    row.push(`${enclosure}${value}${enclosure}`);
+                            // iterate through all the documents
+                            for (const document of documents) {
+                                // extract the columns
+                                const row = [];
+                                for (const column of schema.columns) {
+                                    const enclosure = column.enclosure || '';
+                                    const dflt = column.default || '';
+                                    const value = xpath.select1(`string(${column.path})`, document);
+                                    if (value) {
+                                        row.push(`${enclosure}${value}${enclosure}`);
+                                    }
+                                    else {
+                                        row.push(`${enclosure}${dflt}${enclosure}`);
+                                    }
                                 }
-                                else {
-                                    row.push(`${enclosure}${dflt}${enclosure}`);
+                                // buffer the row
+                                const filename = `${message.partition}/${schema.filename}`;
+                                let entry = batch.find(f => f.filename === filename);
+                                if (!entry) {
+                                    entry = new AzureBlobOperation_1.default(STORAGE_CONTAINER_OUTPUT, 'append', filename, '');
+                                    batch.push(entry);
                                 }
+                                entry.content += row.join(',') + '\n';
                             }
-                            // buffer the row
-                            const filename = `${message.partition}/${s.filename}`;
-                            let entry = batch.find(f => f.filename === filename);
-                            if (!entry) {
-                                entry = new AzureBlobOperation_1.default(STORAGE_CONTAINER_OUTPUT, 'append', filename, '');
-                                batch.push(entry);
-                            }
-                            entry.content += row.join(',') + '\n';
                         }
                     }
                     // raise error if no schemas were found

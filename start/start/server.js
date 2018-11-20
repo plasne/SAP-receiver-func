@@ -8,6 +8,13 @@
 //           3. reads all blobs from the specified partition
 //           4. breaks the list of blobs into chunks of size FILES_PER_MESSAGE
 //           5. enqueues the messages for the processor()
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
+    result["default"] = mod;
+    return result;
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -18,6 +25,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 //  host.json must use "Trace" to see "verbose" logs
 // includes
 const azure_functions_ts_essentials_1 = require("azure-functions-ts-essentials");
+const http = __importStar(require("http"));
+const https = __importStar(require("https"));
 const AzureBlob_1 = __importDefault(require("../global/AzureBlob"));
 const AzureBlobOperation_1 = __importDefault(require("../global/AzureBlobOperation"));
 const AzureQueue_1 = __importDefault(require("../global/AzureQueue"));
@@ -41,6 +50,13 @@ const STORAGE_CONTAINER_SCHEMAS = process.env.STORAGE_CONTAINER_SCHEMAS;
 const STORAGE_SAS = process.env.STORAGE_SAS;
 const STORAGE_KEY = process.env.STORAGE_KEY;
 const FILES_PER_MESSAGE = valueOrDefault(process.env.FILES_PER_MESSAGE, 10);
+// modify the agents
+const httpAgent = http.globalAgent;
+httpAgent.keepAlive = true;
+httpAgent.maxSockets = 30;
+const httpsAgent = https.globalAgent;
+httpsAgent.keepAlive = true;
+httpsAgent.maxSockets = 30;
 // module
 async function run(context) {
     const start = new Date();
@@ -79,11 +95,13 @@ async function run(context) {
         const blob = new AzureBlob_1.default({
             account: STORAGE_ACCOUNT,
             key: STORAGE_KEY,
-            sas: STORAGE_SAS
+            sas: STORAGE_SAS,
+            useGlobalAgent: true
         });
         const queue = new AzureQueue_1.default({
             connectionString: AZURE_WEB_JOBS_STORAGE,
-            encoder: 'base64'
+            encoder: 'base64',
+            useGlobalAgent: true
         });
         // create an output stream for writing the files
         const output = blob.streams({}, {
@@ -99,16 +117,16 @@ async function run(context) {
         // as schemas are loaded, create the output files for each
         blob.loadAsStream(STORAGE_CONTAINER_SCHEMAS)
             .on('data', (data, metadata) => {
-            const obj = JSON.parse(data);
+            const schema = JSON.parse(data);
             if (context.log) {
                 context.log.info(`schema "${metadata.filename}" loaded.`);
             }
             // create file for each schema with header
             const headers = [];
-            for (const column of obj.columns) {
+            for (const column of schema.columns) {
                 headers.push(column.header);
             }
-            output.in.push(new AzureBlobOperation_1.default(STORAGE_CONTAINER_OUTPUT, 'createAppend', `${partition}/${obj.filename}`, headers.join(',') + '\n'));
+            output.in.push(new AzureBlobOperation_1.default(STORAGE_CONTAINER_OUTPUT, 'createAppend', `${partition}/${schema.filename}`, headers.join(',') + '\n'));
         })
             .on('end', () => {
             output.in.end();

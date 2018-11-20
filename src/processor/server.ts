@@ -15,6 +15,7 @@ import * as xpath from 'xpath';
 import AzureBlob from '../global/AzureBlob';
 import AzureBlobOperation from '../global/AzureBlobOperation';
 import { message as queueMessage } from '../global/custom';
+import { ISchema } from '../global/ISchema';
 
 // variables
 const STORAGE_ACCOUNT: string | undefined = process.env.STORAGE_ACCOUNT;
@@ -105,8 +106,8 @@ export async function run(context: Context) {
                 );
             }
             const schemas = blob
-                .loadAsStream<any>(STORAGE_CONTAINER_SCHEMAS, undefined, {
-                    transform: data => JSON.parse(data)
+                .loadAsStream<ISchema>(STORAGE_CONTAINER_SCHEMAS, undefined, {
+                    transform: data => JSON.parse(data) as ISchema
                 })
                 .on('error', error => {
                     if (context.log) context.log.error(error);
@@ -132,7 +133,6 @@ export async function run(context: Context) {
                 })
                 .on('data', (data: string, op: AzureBlobOperation) => {
                     // start logging
-                    let schemasFound = 0;
                     if (context.log) {
                         context.log.info(
                             `looking for schemas for ${op.filename}...`
@@ -156,55 +156,64 @@ export async function run(context: Context) {
                         );
                     }
 
-                    // see which schemas match
+                    // compare versus each schema
                     if (doc) {
-                        for (const s of schemas.buffer) {
-                            if (xpath.select(s.identify, doc).length > 0) {
-                                // identify as a found schema
+                        let schemasFound = 0;
+                        for (const schema of schemas.buffer) {
+                            // identify and select
+                            const id = xpath.select(schema.identifier, doc);
+                            const sel = xpath.select(schema.selector, doc);
+
+                            // identify as a found schema
+                            if (id.length > 0 && sel.length > 0) {
                                 if (context.log) {
                                     context.log.info(
-                                        `schema identified as "${s.name}".`
+                                        `schema identified as "${schema.name}".`
                                     );
                                 }
                                 schemasFound++;
 
-                                // extract the columns
-                                const row: string[] = [];
-                                for (const column of s.columns) {
-                                    const enclosure = column.enclosure || '';
-                                    const dflt = column.default || '';
-                                    const value = xpath.select1(
-                                        `string(${column.path})`,
-                                        doc
-                                    );
-                                    if (value) {
-                                        row.push(
-                                            `${enclosure}${value}${enclosure}`
+                                // iterate through all the documents
+                                for (const document of sel) {
+                                    // extract the columns
+                                    const row: string[] = [];
+                                    for (const column of schema.columns) {
+                                        const enclosure =
+                                            column.enclosure || '';
+                                        const dflt = column.default || '';
+                                        const value = xpath.select1(
+                                            `string(${column.path})`,
+                                            document as any
                                         );
-                                    } else {
-                                        row.push(
-                                            `${enclosure}${dflt}${enclosure}`
-                                        );
+                                        if (value) {
+                                            row.push(
+                                                `${enclosure}${value}${enclosure}`
+                                            );
+                                        } else {
+                                            row.push(
+                                                `${enclosure}${dflt}${enclosure}`
+                                            );
+                                        }
                                     }
-                                }
 
-                                // buffer the row
-                                const filename = `${message.partition}/${
-                                    s.filename
-                                }`;
-                                let entry = batch.find(
-                                    f => f.filename === filename
-                                );
-                                if (!entry) {
-                                    entry = new AzureBlobOperation(
-                                        STORAGE_CONTAINER_OUTPUT,
-                                        'append',
-                                        filename,
-                                        ''
+                                    // buffer the row
+                                    const filename = `${message.partition}/${
+                                        schema.filename
+                                    }`;
+                                    let entry = batch.find(
+                                        f => f.filename === filename
                                     );
-                                    batch.push(entry);
+                                    if (!entry) {
+                                        entry = new AzureBlobOperation(
+                                            STORAGE_CONTAINER_OUTPUT,
+                                            'append',
+                                            filename,
+                                            ''
+                                        );
+                                        batch.push(entry);
+                                    }
+                                    entry.content += row.join(',') + '\n';
                                 }
-                                entry.content += row.join(',') + '\n';
                             }
                         }
 

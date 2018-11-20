@@ -72,7 +72,7 @@ These settings should appear in the Azure Functions AppSettings:
 -   **FOLDER_FORMAT**: See the Partitioning section below, ex. "YYYYMMDDTHHmmss".
 -   **FILES_PER_MESSAGE**: The number of filenames to pack into a queue message, ex. "10". This will determine the number of files that will be processed by an instance of Processor.
 
-In the host.json file, you can control how the Processor function reads from the queue
+In the host.json file, you can control how the Processor function reads from the queue:
 
 ```json
 {
@@ -87,6 +87,49 @@ In the host.json file, you can control how the Processor function reads from the
 ```
 
 For example, if you increased FILES_PER_MESSAGE such that the processing could not reasonably happen within 30 seconds, you might make the visibilityTimeout greater.
+
+For another example, if each file has a large number of entries in it, you may also need to increase the visibilityTimeout to compensate.
+
+## Schemas
+
+A schema defines the files and columns within those files that will serve as the output from processing. You should create a JSON file for each desired schema in STORAGE_CONTAINER_SCHEMAS. Each input file can have multiple schemas applied.
+
+A schema should look like this sample:
+
+```json
+{
+    "name": "MATMA05",
+    "filename": "matmas-block.csv",
+    "identifier": "/MATMAS05/IDOC",
+    "selector": "/MATMAS05/IDOC",
+    "columns": [
+        {
+            "header": "DOCNUM",
+            "path": "EDI_DC40/DOCNUM",
+            "default": "0000000000000000",
+            "enclosure": "\""
+        },
+        {
+            "header": "BESKZ",
+            "path": "E1MARAM/E1MARCM/BESKZ"
+        }
+    ]
+}
+```
+
+-   **name**: The name appears in logging and helps you identify the specific schema.
+-   **filename**: The name of the blob CSV that will contain the output for this schema.
+-   **identifier**: This XPATH select statement must evaluate to 1+ results for this schema to be applied to the input file.
+-   **selector**: This XPATH select statement is used to identify each document in the input file. If there is not at least 1 document identified, the schema is not applied to the input file.
+-   **columns**: Each column must have a _header_ and _path_, but may also have a _default_ and/or _enclosure_.
+    -   **header**: The name of the column that will appear in the header of the CSV.
+    -   **path**: The XPATH select statement relative to each document determined by _selector_. The first result will be considered the value of the column.
+    -   **default**: If _path_ did not return any results, this value will be used. If a _default_ is not specified, an empty string will be used.
+    -   **enclosure**: If you want double-quotes or something else around the value, you can specify that as the enclosure.
+
+## Multiple documents per input file
+
+As mentioned in the schema section above, it is possible for a document to contain more than 1 document. The _selector_ determines where the document or documents will be located in the file.
 
 ## Partitioning
 

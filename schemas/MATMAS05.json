@@ -1,17 +1,18 @@
 {
     "name": "MATMA05",
     "filename": "matmas-block.csv",
-    "identify": "/MATMAS05",
+    "identifier": "/MATMAS05/IDOC",
+    "selector": "/MATMAS05/IDOC",
     "columns": [
         {
             "header": "DOCNUM",
-            "path": "/MATMAS05/IDOC/EDI_DC40/DOCNUM",
+            "path": "EDI_DC40/DOCNUM",
             "default": "0000000000000000",
             "enclosure": "\""
         },
         {
             "header": "BESKZ",
-            "path": "/MATMAS05/IDOC/E1MARAM/E1MARCM/BESKZ"
+            "path": "E1MARAM/E1MARCM/BESKZ"
         }
     ]
 }

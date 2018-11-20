@@ -2,6 +2,13 @@
 // FUNCTION: receiver()
 // AUTHOR:   Peter Lasne, Principal Software Development Engineer
 // PURPOSE:  This function accepts IDOC messages from SAP and writes them to Blob Storage.
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
+    result["default"] = mod;
+    return result;
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -10,6 +17,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const azure_functions_ts_essentials_1 = require("azure-functions-ts-essentials");
 const moment = require("moment");
 require('moment-round');
+const http = __importStar(require("http"));
+const https = __importStar(require("https"));
 const uuid_1 = require("uuid");
 const AzureBlob_1 = __importDefault(require("../global/AzureBlob"));
 // variables
@@ -19,6 +28,13 @@ const STORAGE_SAS = process.env.STORAGE_SAS;
 const STORAGE_KEY = process.env.STORAGE_KEY;
 const FOLDER_PERIOD = process.env.FOLDER_PERIOD || '1 hour';
 const FOLDER_FORMAT = process.env.FOLDER_FORMAT || 'YYYYMMDDTHHmmss';
+// modify the agents
+const httpAgent = http.globalAgent;
+httpAgent.keepAlive = true;
+httpAgent.maxSockets = 30;
+const httpsAgent = https.globalAgent;
+httpsAgent.keepAlive = true;
+httpsAgent.maxSockets = 30;
 async function run(context) {
     try {
         // validate
@@ -43,7 +59,8 @@ async function run(context) {
         const blob = new AzureBlob_1.default({
             account: STORAGE_ACCOUNT,
             key: STORAGE_KEY,
-            sas: STORAGE_SAS
+            sas: STORAGE_SAS,
+            useGlobalAgent: true
         });
         // determine the timeslice to apply the files to
         const now = moment();
@@ -51,12 +68,18 @@ async function run(context) {
         const periodLast = now.floor(Number.parseInt(periodArray[0], 10), periodArray[1]);
         const periodPath = periodLast.utc().format(FOLDER_FORMAT);
         // save the raw file
-        if (context.log) {
-            context.log.info(`saving "${STORAGE_CONTAINER_INPUT}/${periodPath}/name-${uuid_1.v4()}.xml"...`);
+        if (context.req.rawBody) {
+            if (context.log) {
+                context.log.info(`saving "${STORAGE_CONTAINER_INPUT}/${periodPath}/name-${uuid_1.v4()}.xml"...`);
+            }
+            await blob.createBlockBlobFromText(STORAGE_CONTAINER_INPUT, `${periodPath}/name-${uuid_1.v4()}.xml`, context.req.rawBody);
+            if (context.log) {
+                context.log.info(`saved "${STORAGE_CONTAINER_INPUT}/${periodPath}/name-${uuid_1.v4()}.xml".`);
+            }
         }
-        await blob.createBlockBlobFromText(STORAGE_CONTAINER_INPUT, `${periodPath}/name-${uuid_1.v4()}.xml`, context.req.rawBody);
-        if (context.log) {
-            context.log.info(`saved "${STORAGE_CONTAINER_INPUT}/${periodPath}/name-${uuid_1.v4()}.xml".`);
+        else {
+            if (context.log)
+                context.log.info(`ignoring request without body.`);
         }
         // respond with status
         context.res.status = azure_functions_ts_essentials_1.HttpStatusCode.OK;

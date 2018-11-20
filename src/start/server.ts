@@ -22,6 +22,7 @@ import AzureBlobOperation from '../global/AzureBlobOperation';
 import AzureQueue from '../global/AzureQueue';
 import AzureQueueOperation from '../global/AzureQueueOperation';
 import { message as queueMessage } from '../global/custom';
+import { ISchema } from '../global/ISchema';
 
 // function to cast to a number or use a default if thats not possible
 function valueOrDefault(value: string | undefined, dflt: number) {
@@ -132,21 +133,21 @@ export async function run(context: Context) {
         // as schemas are loaded, create the output files for each
         blob.loadAsStream(STORAGE_CONTAINER_SCHEMAS)
             .on('data', (data: string, metadata: any) => {
-                const obj = JSON.parse(data);
+                const schema = JSON.parse(data) as ISchema;
                 if (context.log) {
                     context.log.info(`schema "${metadata.filename}" loaded.`);
                 }
 
                 // create file for each schema with header
                 const headers: string[] = [];
-                for (const column of obj.columns) {
+                for (const column of schema.columns) {
                     headers.push(column.header);
                 }
                 output.in.push(
                     new AzureBlobOperation(
                         STORAGE_CONTAINER_OUTPUT,
                         'createAppend',
-                        `${partition}/${obj.filename}`,
+                        `${partition}/${schema.filename}`,
                         headers.join(',') + '\n'
                     )
                 );

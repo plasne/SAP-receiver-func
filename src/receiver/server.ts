@@ -66,20 +66,24 @@ export async function run(context: Context) {
         const periodPath = periodLast.utc().format(FOLDER_FORMAT);
 
         // save the raw file
-        if (context.log) {
-            context.log.info(
-                `saving "${STORAGE_CONTAINER_INPUT}/${periodPath}/name-${uuid()}.xml"...`
+        if (context.req.rawBody) {
+            if (context.log) {
+                context.log.info(
+                    `saving "${STORAGE_CONTAINER_INPUT}/${periodPath}/name-${uuid()}.xml"...`
+                );
+            }
+            await blob.createBlockBlobFromText(
+                STORAGE_CONTAINER_INPUT,
+                `${periodPath}/name-${uuid()}.xml`,
+                context.req.rawBody
             );
-        }
-        await blob.createBlockBlobFromText(
-            STORAGE_CONTAINER_INPUT,
-            `${periodPath}/name-${uuid()}.xml`,
-            context.req.rawBody
-        );
-        if (context.log) {
-            context.log.info(
-                `saved "${STORAGE_CONTAINER_INPUT}/${periodPath}/name-${uuid()}.xml".`
-            );
+            if (context.log) {
+                context.log.info(
+                    `saved "${STORAGE_CONTAINER_INPUT}/${periodPath}/name-${uuid()}.xml".`
+                );
+            }
+        } else {
+            if (context.log) context.log.info(`ignoring request without body.`);
         }
 
         // respond with status
